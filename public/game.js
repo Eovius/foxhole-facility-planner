@@ -3304,12 +3304,70 @@ try {
         }
         game.buildingSelectedMenuComponent?.refresh();
     };
+    
+    game.exchangeSingleSelected = function(buildingID, dataKey) {
+
+        let selectedEntity = game.getEntityById(buildingID);
+        let bData = selectedEntity?.building;
+        if (bData) {
+            let upgradeKey = dataKey?.key;
+            if (upgradeKey && bData.parent?.key && upgradeKey === selectedEntity.building.key) {
+                upgradeKey = bData.parent.key;
+            }
+            let clone = game.createObject(upgradeKey ?? dataKey ?? selectedEntity.building.key, selectedEntity.x, selectedEntity.y, selectedEntity.z, selectedEntity.rotation, selectedEntity.id, false);
+            if (upgradeKey) {
+                let position = { x: clone.x, y: clone.y };
+                if (selectedEntity.building?.positionOffset) {
+                    position.x -= ((selectedEntity.building.positionOffset.x ?? 0) * TEXTURE_SCALE) / METER_TEXTURE_PIXEL_SCALE;
+                    position.y -= ((selectedEntity.building.positionOffset.y ?? 0) * TEXTURE_SCALE) / METER_TEXTURE_PIXEL_SCALE;
+                }
+                if (clone.building?.positionOffset) {
+                    position.x += ((clone.building.positionOffset.x ?? 0) * TEXTURE_SCALE) / METER_TEXTURE_PIXEL_SCALE;
+                    position.y += ((clone.building.positionOffset.y ?? 0) * TEXTURE_SCALE) / METER_TEXTURE_PIXEL_SCALE;
+                }
+                position = Math.rotateAround(clone, position);
+                clone.position.set(position.x, position.y);
+            }
+            clone.locked = selectedEntity.locked;
+            clone.selectionArea.tint = clone.locked ? COLOR_RED : COLOR_WHITE;
+            let objData = {
+                upgrading: true
+            };
+            selectedEntity.onSave(objData);
+            clone.onLoad(objData);
+            clone.afterLoad(objData);
+            game.selectEntity(clone);
+            if (upgradeKey && selectedEntity.sockets) {
+                for (const entitySocket of selectedEntity.sockets) {
+                    if (clone.sockets) {
+                        let foundSocket = false;
+                        for (const cloneSocket of clone.sockets) {
+                            if (entitySocket.socketData.id === cloneSocket.socketData.id) {
+                                foundSocket = true;
+                                break;
+                            }
+                        }
+                        if (foundSocket) {
+                            continue;
+                        }
+                    }
+                    entitySocket.removeConnections();
+                }
+                selectedEntity.sockets = null;
+            }
+            selectedEntity.remove();
+            if (typeof dataKey === 'string') {
+                    clone.attemptReconnections(true, false);
+            }
+        }
+    }
+
 
     game.upgradeSelected = function() {
         //Copy-Paste'd code from above and buildMenu.js
         for (const selectedEntity of selectedEntities) {
             if (selectedEntity.building?.tierUp) {
-                game.exchangeSelected(selectedEntity.building.tierUp);
+                game.exchangeSingleSelected(selectedEntity.id, selectedEntity.building.tierUp);
             }
         }
         game.saveStateChanged = true;
@@ -3320,14 +3378,13 @@ try {
         //Just likeupgrade Selected
         for (const selectedEntity of selectedEntities) {
             if (selectedEntity.building?.tierDown ?? selectedEntity.building?.parentKey) {
-                game.exchangeSelected(selectedEntity.building.tierDown ?? selectedEntity.building.parent);
+                game.exchangeSingleSelected(selectedEntity.id, selectedEntity.building.tierDown ?? selectedEntity.building.parent);
             }
         }
         game.saveStateChanged = true;
         game.buildingSelectedMenuComponent?.refresh();
     }
-
-
+    
     game.moveSelected = function(x, y, snapped) {
         if (selectedEntities.length && game.getSelectedLockState() === null) {
             const gridSize = game.settings.gridSize ? game.settings.gridSize : 16;
